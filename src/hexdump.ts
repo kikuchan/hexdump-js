@@ -2,81 +2,247 @@ function hex(v: number, c: number) {
   return Number(v).toString(16).padStart(c, '0');
 }
 
+type Context =
+  | {
+      type: 'hex-value' | 'character-value';
+      address: number;
+      value: number;
+    }
+  | {
+      type: 'address' | 'hex-value-no-data' | 'character-value-no-data';
+      address: number;
+    }
+  | {
+      type:
+        | 'line-prefix'
+        | 'address-prefix'
+        | 'address-suffix'
+        | 'hex-dump-prefix'
+        | 'hex-group-prefix'
+        | 'hex-gap'
+        | 'hex-group-gap'
+        | 'hex-group-suffix'
+        | 'hex-dump-suffix'
+        | 'character-prefix'
+        | 'character-suffix'
+        | 'line-suffix'
+        | 'flush';
+    };
+
+type ColorizerOperation = { enter: string; leave: string } | null;
+
+type Colorizer =
+  | boolean
+  | undefined
+  | 'simple'
+  | 'html'
+  | ((s: string, ctx: Context) => ColorizerOperation | undefined);
+type Formatter = undefined | ((s: string, ctx: Context) => string | undefined);
+
 type Options = {
   addrOffset?: number;
-  printer?: false | ((s: string) => void);
+  addrLength?: number;
+  printer?: false | ((s: string) => void) /* for each line */;
+  formatter?: Formatter /* for each item */;
+  color?: Colorizer;
   prefix?: string;
   printChars?: boolean;
   foldSize?: number;
 };
-export function hexdump(buf: ArrayLike<number> | ArrayBuffer | DataView, options?: Options): string;
-export function hexdump(buf: ArrayLike<number> | ArrayBuffer | DataView, len: number, options?: Options): string;
-export function hexdump(buf: ArrayLike<number> | ArrayBuffer | DataView, len?: number | Options, options?: Options) {
-  const u8 = ArrayBuffer.isView(buf) ? new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength) : new Uint8Array(buf);
-  if (typeof len !== 'number') {
-    options = len;
-    len = u8.length;
+
+interface Hexdumper {
+  (buf: ArrayLike<number> | ArrayBuffer | DataView, options?: Options): string;
+  (buf: ArrayLike<number> | ArrayBuffer | DataView, len: number, options?: Options): string;
+}
+
+interface Hexdump extends Hexdumper {
+  log: Hexdumper;
+  warn: Hexdumper;
+  error: Hexdumper;
+  string: Hexdumper;
+
+  create: (printer: (s: string) => void) => Hexdumper;
+}
+
+const identity = <T>(s: T) => s;
+
+const simpleColorizer = {
+  simple: {
+    address: { enter: '\x1b[38;5;238m', leave: '\x1b[m' },
+    separator: { enter: '\x1b[38;5;238m', leave: '\x1b[m' },
+    control: { enter: '\x1b[38;5;178m', leave: '\x1b[m' },
+    ascii: { enter: '\x1b[m', leave: '\x1b[m' },
+    exascii: { enter: '\x1b[38;5;209m', leave: '\x1b[m' },
+    null: { enter: '\x1b[38;5;244m', leave: '\x1b[m' },
+    normal: null,
+  },
+  html: {
+    address: { enter: '<span class="hexdump-address">', leave: '</span>' },
+    separator: { enter: '<span class="hexdump-separator">', leave: '</span>' },
+    control: { enter: '<span class="hexdump-control">', leave: '</span>' },
+    ascii: { enter: '<span class="hexdump-ascii">', leave: '</span>' },
+    exascii: { enter: '<span class="hexdump-exascii">', leave: '</span>' },
+    null: { enter: '<span class="hexdump-null">', leave: '</span>' },
+    normal: null,
+  },
+} as Record<
+  string,
+  {
+    address?: ColorizerOperation;
+    separator?: ColorizerOperation;
+    control?: ColorizerOperation;
+    ascii?: ColorizerOperation;
+    exascii?: ColorizerOperation;
+    null?: ColorizerOperation;
+    normal: ColorizerOperation;
   }
-  options = { ...(options ?? {}) };
-  if (len === undefined || len < 0) len = u8.length;
-  if (options.addrOffset === undefined) options.addrOffset = 0;
+>;
 
-  const printer =
-    options.printer ||
-    (options.printer !== false
-      ? console.log
-      : () => {
-          return;
-        });
+const create_colorizer = (colorizer: Colorizer) => {
+  let lastColor: ColorizerOperation | undefined = undefined;
 
-  const foldSize = options.foldSize || 16;
-  const printChars = options.printChars !== false;
+  if (!colorizer) return identity;
+  if (colorizer === true) colorizer = 'simple';
 
-  const offset = options.addrOffset % foldSize;
-  const count = (offset + len! + foldSize - 1) / foldSize;
+  if (typeof colorizer === 'string') {
+    const defs = simpleColorizer[colorizer];
+    const separators = ['address-prefix', 'address-suffix', 'character-prefix', 'character-suffix'];
 
-  const result: string[] = [];
-  let line = '';
-  const print = function (s: string) {
-    line += s;
-  };
+    colorizer = function (s, ctx) {
+      if (!s.trim()) return undefined; // keep the last color context on empty
 
-  const prefix = options?.prefix || '';
+      if (defs.address && ctx.type === 'address') return defs.address;
+      if (defs.separator && separators.includes(ctx.type)) return defs.separator;
 
-  for (let i = 0; i < count; i++) {
-    print(`${prefix}${hex(options.addrOffset, 8 - prefix.length)}: `);
-    options.addrOffset = (options.addrOffset / foldSize) * foldSize;
-    for (let j = 0; j < foldSize; j++) {
-      const idx = i * foldSize + j - offset;
-      if (j % 8 == 0) print(' ');
-      if (idx < len!) {
-        print(`${hex(u8[idx], 2)} `);
-      } else {
-        print('   ');
+      if ((ctx.type === 'hex-value' || ctx.type === 'character-value') && typeof ctx.value === 'number') {
+        if (defs.null !== undefined && ctx.value === 0) return defs.null;
+        if (defs.control !== undefined && ctx.value < 0x20) return defs.control;
+        if (defs.ascii !== undefined && 0x20 <= ctx.value && ctx.value < 0x7f) return defs.ascii;
+        if (defs.exascii !== undefined && 0x80 <= ctx.value && ctx.value <= 0xff) return defs.exascii;
+        return defs.normal;
       }
+
+      return defs.normal;
+    };
+  }
+
+  return (s: string, ctx: Context) => {
+    const color = ctx.type === 'flush' ? null : colorizer(s, ctx);
+
+    if (color !== undefined && (lastColor?.enter !== color?.enter || lastColor?.leave !== color?.leave)) {
+      s = (lastColor?.leave || '') + (color?.enter || '') + s;
+      lastColor = color;
     }
-    if (printChars) {
-      print(' |');
+    return s;
+  };
+};
+
+const create_formatter = (formatter: Formatter) => {
+  if (!formatter) formatter = identity;
+
+  return (s: string, ctx: Context) => {
+    return formatter(s, ctx) || '';
+  };
+};
+
+function create_hexdumper(printer: ((s: string) => void) | null): Hexdumper {
+  return (buf: ArrayLike<number> | ArrayBuffer | DataView, len?: number | Options, options?: Options) => {
+    const u8 = ArrayBuffer.isView(buf)
+      ? new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength)
+      : new Uint8Array(buf);
+    if (typeof len !== 'number') {
+      options = len;
+      len = u8.length;
+    }
+    options = { ...(options ?? {}) };
+    if (len === undefined || len < 0) len = u8.length;
+
+    printer = options.printer || printer;
+    const formatter = create_formatter(options.formatter);
+    const colorize = create_colorizer(options.color);
+
+    const foldSize = options.foldSize || 16;
+    const printChars = options.printChars !== false;
+
+    let addrOffset = options.addrOffset || 0;
+    const offset = addrOffset % foldSize;
+    const count = (offset + len! + foldSize - 1) / foldSize;
+
+    const result: string[] = [];
+    let line = '';
+    const print = function (s: string, ctx: Context) {
+      line += colorize(formatter(s, ctx), ctx);
+    };
+
+    const prefix = options?.prefix || '';
+    const addrLength = options?.addrLength ?? 8 - prefix.length;
+
+    for (let i = 0; i < count; i++) {
+      print('', { type: 'line-prefix' });
+      print(prefix, { type: 'address-prefix' });
+      print(hex(addrOffset, addrLength), { type: 'address', address: addrOffset });
+      print(': ', { type: 'address-suffix' });
+      addrOffset = (addrOffset / foldSize) * foldSize;
+
+      print(' ', { type: 'hex-dump-prefix' });
+      print('', { type: 'hex-group-prefix' });
       for (let j = 0; j < foldSize; j++) {
         const idx = i * foldSize + j - offset;
-
+        if (j && j % 8 == 0) {
+          print('', { type: 'hex-group-suffix' });
+          print('  ', { type: 'hex-group-gap' });
+          print('', { type: 'hex-group-prefix' });
+        } else if (j) {
+          print(' ', { type: 'hex-gap' });
+        }
         if (idx < len!) {
-          print(u8[idx] >= 0x20 && u8[idx] < 0x7f ? String.fromCharCode(u8[idx]) : '.');
+          print(hex(u8[idx], 2), { type: 'hex-value', address: addrOffset + idx, value: u8[idx] });
         } else {
-          print(' ');
+          print('  ', { type: 'hex-value-no-data', address: addrOffset + idx });
         }
       }
-      print('|');
+      print('', { type: 'hex-group-suffix' });
+      print(' ', { type: 'hex-dump-suffix' });
+
+      if (printChars) {
+        print(' |', { type: 'character-prefix' });
+        for (let j = 0; j < foldSize; j++) {
+          const idx = i * foldSize + j - offset;
+
+          if (idx < len!) {
+            print(u8[idx] >= 0x20 && u8[idx] < 0x7f ? String.fromCharCode(u8[idx]) : '.', {
+              type: 'character-value',
+              address: addrOffset + idx,
+              value: u8[idx],
+            });
+          } else {
+            print(' ', { type: 'character-value-no-data', address: addrOffset + idx });
+          }
+        }
+        print('|', { type: 'character-suffix' });
+      }
+      print('', { type: 'line-suffix' });
+      print('', { type: 'flush' });
+
+      printer?.(line);
+      result.push(line);
+      line = '';
+
+      addrOffset += foldSize;
     }
-
-    printer(line);
-    result.push(line);
-    line = '';
-
-    options.addrOffset += foldSize;
-  }
-  return result.join('\n');
+    return result.join('\n');
+  };
 }
+
+export const hexdump: Hexdump = Object.assign(create_hexdumper(null), {
+  create: create_hexdumper,
+
+  log: create_hexdumper(console.log),
+  warn: create_hexdumper(console.warn),
+  error: create_hexdumper(console.error),
+
+  string: create_hexdumper(null),
+});
 
 export default {
   hexdump,
