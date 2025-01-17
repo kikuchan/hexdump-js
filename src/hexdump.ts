@@ -29,7 +29,7 @@ type Context =
         | 'flush';
     };
 
-type ColorizerOperation = { enter: string; leave: string } | null;
+type ColorizerOperation = { enter: string; leave: string; escape?: (s: string) => string } | null;
 
 type Colorizer =
   | boolean
@@ -66,6 +66,17 @@ interface Hexdump extends Hexdumper {
 
 const identity = <T>(s: T) => s;
 
+const htmlEscaper = (s: string) =>
+  s.replace(
+    /[&<>]/g,
+    (x) =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+      })[x]!,
+  );
+
 const simpleColorizer = {
   simple: {
     address: { enter: '\x1b[38;5;238m', leave: '\x1b[m' },
@@ -77,13 +88,13 @@ const simpleColorizer = {
     normal: null,
   },
   html: {
-    address: { enter: '<span class="hexdump-address">', leave: '</span>' },
-    separator: { enter: '<span class="hexdump-separator">', leave: '</span>' },
-    control: { enter: '<span class="hexdump-control">', leave: '</span>' },
-    ascii: { enter: '<span class="hexdump-ascii">', leave: '</span>' },
-    exascii: { enter: '<span class="hexdump-exascii">', leave: '</span>' },
-    null: { enter: '<span class="hexdump-null">', leave: '</span>' },
-    normal: null,
+    address: { enter: '<span class="hexdump-address">', leave: '</span>', escape: htmlEscaper },
+    separator: { enter: '<span class="hexdump-separator">', leave: '</span>', escape: htmlEscaper },
+    control: { enter: '<span class="hexdump-control">', leave: '</span>', escape: htmlEscaper },
+    ascii: { enter: '<span class="hexdump-ascii">', leave: '</span>', escape: htmlEscaper },
+    exascii: { enter: '<span class="hexdump-exascii">', leave: '</span>', escape: htmlEscaper },
+    null: { enter: '<span class="hexdump-null">', leave: '</span>', escape: htmlEscaper },
+    normal: { enter: '', leave: '', escape: htmlEscaper },
   },
 } as Record<
   string,
@@ -129,8 +140,11 @@ const create_colorizer = (colorizer: Colorizer) => {
   return (s: string, ctx: Context) => {
     const color = ctx.type === 'flush' ? null : colorizer(s, ctx);
 
-    if (color !== undefined && (lastColor?.enter !== color?.enter || lastColor?.leave !== color?.leave)) {
-      s = (lastColor?.leave || '') + (color?.enter || '') + s;
+    if (
+      color !== undefined &&
+      (lastColor?.enter !== color?.enter || lastColor?.leave !== color?.leave || lastColor?.escape !== color?.escape)
+    ) {
+      s = (lastColor?.leave || '') + (color?.enter || '') + (color?.escape || identity)(s);
       lastColor = color;
     }
     return s;
