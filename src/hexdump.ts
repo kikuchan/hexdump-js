@@ -4,12 +4,12 @@ function hex(v: number, c: number) {
 
 type Context =
   | {
-      type: 'hex-value' | 'character-value';
+      type: 'hex-value' | 'hex-value-prefix' | 'hex-value-suffix' | 'character-value';
       address: number;
       value: number;
     }
   | {
-      type: 'address' | 'hex-value-no-data' | 'character-value-no-data';
+      type: 'address';
       address: number;
     }
   | {
@@ -19,6 +19,8 @@ type Context =
         | 'address-suffix'
         | 'hex-dump-prefix'
         | 'hex-group-prefix'
+        | 'hex-value-no-data'
+        | 'character-value-no-data'
         | 'hex-gap'
         | 'hex-group-gap'
         | 'hex-group-suffix'
@@ -48,6 +50,7 @@ type Options = {
   prefix?: string;
   printChars?: boolean;
   foldSize?: number;
+  footer?: boolean;
 };
 
 interface Hexdumper {
@@ -178,9 +181,9 @@ function create_hexdumper(printer: ((s: string) => void) | null): Hexdumper {
     const foldSize = options.foldSize || 16;
     const printChars = options.printChars !== false;
 
-    let addrOffset = options.addrOffset || 0;
-    const offset = addrOffset % foldSize;
-    const count = (offset + len! + foldSize - 1) / foldSize;
+    let address = options.addrOffset || 0;
+    const offset = address % foldSize;
+    const rows = (len ? Math.ceil((offset % foldSize + len) / foldSize) : 0) + (options.footer !== false ? 1 : 0)
 
     const result: string[] = [];
     let line = '';
@@ -191,12 +194,13 @@ function create_hexdumper(printer: ((s: string) => void) | null): Hexdumper {
     const prefix = options?.prefix || '';
     const addrLength = options?.addrLength ?? 8 - prefix.length;
 
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < rows; i++) {
+      const addressBase = address;
+
       print('', { type: 'line-prefix' });
       print(prefix, { type: 'address-prefix' });
-      print(hex(addrOffset, addrLength), { type: 'address', address: addrOffset });
+      print(hex(address, addrLength), { type: 'address', address });
       print(': ', { type: 'address-suffix' });
-      addrOffset = (addrOffset / foldSize) * foldSize;
 
       print(' ', { type: 'hex-dump-prefix' });
       print('', { type: 'hex-group-prefix' });
@@ -209,28 +213,34 @@ function create_hexdumper(printer: ((s: string) => void) | null): Hexdumper {
         } else if (j) {
           print(' ', { type: 'hex-gap' });
         }
-        if (idx < len!) {
-          print(hex(u8[idx], 2), { type: 'hex-value', address: addrOffset + idx, value: u8[idx] });
+
+        if (0 <= idx && idx < len) {
+          print('', { type: 'hex-value-prefix', address, value: u8[idx] });
+          print(hex(u8[idx], 2), { type: 'hex-value', address, value: u8[idx] });
+          print('', { type: 'hex-value-suffix', address, value: u8[idx] });
+          address++;
         } else {
-          print('  ', { type: 'hex-value-no-data', address: addrOffset + idx });
+          print('  ', { type: 'hex-value-no-data' });
         }
       }
       print('', { type: 'hex-group-suffix' });
       print(' ', { type: 'hex-dump-suffix' });
 
       if (printChars) {
+        let address = addressBase;
         print(' |', { type: 'character-prefix' });
         for (let j = 0; j < foldSize; j++) {
           const idx = i * foldSize + j - offset;
 
-          if (idx < len!) {
+          if (0 <= idx && idx < len) {
             print(u8[idx] >= 0x20 && u8[idx] < 0x7f ? String.fromCharCode(u8[idx]) : '.', {
               type: 'character-value',
-              address: addrOffset + idx,
+              address,
               value: u8[idx],
             });
+            address++;
           } else {
-            print(' ', { type: 'character-value-no-data', address: addrOffset + idx });
+            print(' ', { type: 'character-value-no-data' });
           }
         }
         print('|', { type: 'character-suffix' });
@@ -241,8 +251,6 @@ function create_hexdumper(printer: ((s: string) => void) | null): Hexdumper {
       printer?.(line);
       result.push(line);
       line = '';
-
-      addrOffset += foldSize;
     }
     return result.join('\n');
   };
