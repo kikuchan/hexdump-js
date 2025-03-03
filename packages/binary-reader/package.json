@@ -1,0 +1,23 @@
+{
+  "name": "@kikuchan/binary-reader",
+  "description": "binary-reader",
+  "keywords": ["binary-reader"],
+  "version": "0.1.0-alpha.0",
+  "type": "module",
+  "main": "main.js",
+  "types": "main.d.ts",
+  "files": ["main.js", "main.d.ts"],
+  "scripts": {
+    "clean": "rm -f *.d.ts *.js",
+    "build:types": "tsc",
+    "build": "pnpm run build:esm && pnpm run build:types",
+    "build:esm": "esbuild main.ts --minify --outfile=main.js",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint . --write",
+    "format": "biome format .",
+    "format:fix": "biome format . --write"
+  },
+  "author": "kikuchan <kikuchan98@gmail.com>",
+  "homepage": "https://github.com/kikuchan/utils-on-npm#readme",
+  "license": "MIT"
+}

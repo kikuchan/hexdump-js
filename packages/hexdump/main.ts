@@ -183,7 +183,7 @@ function create_hexdumper(printer: ((s: string) => void) | null): Hexdumper {
 
     let address = options.addrOffset || 0;
     const offset = address % foldSize;
-    const rows = (len ? Math.ceil((offset % foldSize + len) / foldSize) : 0) + (options.footer !== false ? 1 : 0)
+    const rows = (len ? Math.ceil(((offset % foldSize) + len) / foldSize) : 0) + (options.footer !== false ? 1 : 0);
 
     const result: string[] = [];
     let line = '';
@@ -192,7 +192,7 @@ function create_hexdumper(printer: ((s: string) => void) | null): Hexdumper {
     };
 
     const prefix = options?.prefix || '';
-    const addrLength = options?.addrLength ?? 8 - prefix.length;
+    const addrLength = Math.max(options?.addrLength ?? 8 - prefix.length, 0);
 
     for (let i = 0; i < rows; i++) {
       const addressBase = address;

@@ -1,0 +1,24 @@
+#!/bin/sh
+if [ $# -lt 1 ]; then
+	echo "Usage: $0 <major | minor | patch | premajor | preminor | prepatch | prerelease | alpha | beta>"
+	exit
+fi
+
+DIRTY=$(git status --untracked-files=no --porcelain)
+if [ -n "${DIRTY}" ]; then
+	echo -e "\033[33mERROR: Working directory is not clean\033[m"
+	exit
+fi
+
+d=$(date +%Y%m%d)
+PREID=""
+CMD="$1"
+if [ "${CMD}" = "alpha" -o "${CMD}" = "beta" ]; then
+	PREID="${CMD}"
+	CMD="prerelease"
+fi
+
+pnpm -r exec npm version --no-git-tag-version --preid="${PREID}" "${CMD}" > /dev/null
+pnpm -r exec jq -rc '.name + ": " + .version' package.json | sort
+(echo "release: $d"; echo; pnpm -r exec jq -rc '"  " + .name + ": " + .version' package.json | sort) | git commit -F- -a
+git tag release-${d}

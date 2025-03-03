@@ -1,31 +1,14 @@
 {
-  "name": "@kikuchan/hexdump",
-  "version": "0.1.0-alpha.3",
-  "description": "hexdump",
-  "type": "module",
-  "main": "dist/hexdump.js",
-  "types": "dist/hexdump.d.ts",
-  "files": [
-    "dist/"
-  ],
+  "name": "@kikuchan/utils-on-npm",
+  "private": true,
+  "version": "0.0.0",
   "scripts": {
-    "build:types": "tsc",
-    "build": "pnpm run build:esm && pnpm run build:types",
-    "build:esm": "esbuild src/hexdump.ts --minify --outfile=dist/hexdump.js",
-    "lint": "biome lint ./src",
-    "lint:fix": "biome lint ./src --write",
-    "format": "biome format ./src",
-    "format:fix": "biome format ./src --write"
+    "build": "pnpm recursive run build",
+    "clean": "pnpm recursive run clean"
   },
-  "keywords": [
-    "hexdump"
-  ],
-  "author": "kikuchan <kikuchan98@gmail.com>",
-  "homepage": "https://github.com/kikuchan/hexdump-js#readme",
-  "license": "MIT",
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
-    "esbuild": "^0.24.2",
-    "typescript": "^5.7.3"
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.2"
   }
 }
