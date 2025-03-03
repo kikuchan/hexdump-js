@@ -1,12 +1,17 @@
 {
   "name": "@kikuchan/hexdump",
   "description": "hexdump",
-  "keywords": ["hexdump"],
-  "version": "0.1.0-alpha.3",
+  "keywords": [
+    "hexdump"
+  ],
+  "version": "0.1.0-alpha.4",
   "type": "module",
   "main": "main.js",
   "types": "main.d.ts",
-  "files": ["main.js", "main.d.ts"],
+  "files": [
+    "main.js",
+    "main.d.ts"
+  ],
   "scripts": {
     "clean": "rm -f *.d.ts *.js",
     "build:types": "tsc",
