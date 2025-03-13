@@ -20,6 +20,13 @@ jobs:
         id: set_tag
         run: echo "tag_name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
+      - name: Set release note
+        id: release_note
+        run: |
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          git log -1 --pretty=%B | sed -n '2,$p' >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - uses: actions/setup-node@v3
         with:
           node-version: 23
@@ -46,3 +53,4 @@ jobs:
           release_name: ${{ steps.set_tag.outputs.tag_name }}
           draft: false
           prerelease: false
+          body: ${{ steps.release_note.outputs.body }}
