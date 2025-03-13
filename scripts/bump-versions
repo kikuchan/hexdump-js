@@ -10,7 +10,7 @@ if [ -n "${DIRTY}" ]; then
 	exit
 fi
 
-d=$(date +%Y%m%d)
+date=$(date +%Y%m%d)
 PREID=""
 CMD="$1"
 if [ "${CMD}" = "alpha" -o "${CMD}" = "beta" ]; then
@@ -18,7 +18,22 @@ if [ "${CMD}" = "alpha" -o "${CMD}" = "beta" ]; then
 	CMD="prerelease"
 fi
 
-pnpm -r exec npm version --no-git-tag-version --preid="${PREID}" "${CMD}" > /dev/null
-pnpm -r exec jq -rc '.name + ": " + .version' package.json | sort
-(echo "release: $d"; echo; pnpm -r exec jq -rc '"  " + .name + ": " + .version' package.json | sort) | git commit -F- -a
-git tag release-${d}
+updated=""
+last_release_rag=$(git tag|grep release|sort -r|head -1)
+for d in packages/*; do
+	echo -n "${d}: "
+	changes=$(git log --oneline ${last_release_rag}.. $d | wc -l)
+
+	if [ ${changes} -gt 0 ]; then
+		echo "${changes} changes."
+		version=$(cd $d; npm version --no-git-tag-version --preid="${PREID}" "${CMD}")
+		updated="${updated}|$(cd $d; jq -rc '.name + ": " + .version' package.json)"
+	else
+		echo "None"
+	fi
+done
+
+msg=$(echo -e "release: $date\n$updated" | sed 's/|/\n  /g')
+
+git commit -m "$msg" -a
+git tag release-${date}
