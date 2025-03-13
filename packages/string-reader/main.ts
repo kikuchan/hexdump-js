@@ -55,14 +55,14 @@ export class StringReader {
    * This function does NOT advance the position
    *
    * @param m string or RegExp
-   * @returns matched strings, otherwise `false`
+   * @returns matched strings, otherwise `null`
    */
   startsWith(m: string | RegExp) {
-    if (this.eof()) return false;
+    if (this.eof()) return null;
 
     const sliced = this.#s.slice(this.position);
 
-    return (typeof m === 'string' ? sliced.startsWith(m) && [m] : sliced.match(new RegExp(m, 'y'))) || false;
+    return (typeof m === 'string' ? sliced.startsWith(m) && [m] : sliced.match(new RegExp(m, 'y'))) || null;
   }
 
   /**
@@ -71,24 +71,25 @@ export class StringReader {
    * This function advances the position if matched
    *
    * @param m string or RegExp
-   * @param cb callback function
-   * @returns matched strings, otherwise `false`
+   * @param translate result translate function
+   * @returns matched strings (or translated result), otherwise `null`
    */
-  match(m: string | RegExp, cb?: (matched: string[]) => void) {
+  match(m: string | RegExp): string[] | null;
+  match<T>(m: string | RegExp, translate: (matched: string[]) => T): T | null;
+  match<T>(m: string | RegExp, translate?: (matched: string[]) => T): string[] | T | null {
     const matched = this.startsWith(m);
-    if (!matched) return false;
+    if (!matched) return null;
 
     this.skip(matched[0].length);
-    cb?.(matched);
-    return matched;
+    return translate ? translate(matched) : matched;
   }
 
-  #search<T>(m: string | RegExp, cb: (n: number) => T): T | false {
+  #search<T>(m: string | RegExp, translate: (n: number) => T): T | null {
     const sliced = this.#s.slice(this.position);
     const n = typeof m === 'string' ? sliced.indexOf(m) : sliced.search(m);
-    if (n < 0) return false;
+    if (n < 0) return null;
 
-    return cb(n);
+    return translate(n);
   }
 
   /**
@@ -97,16 +98,18 @@ export class StringReader {
    * This function advances the position at the end of the matched string if found
    *
    * @param m string or RegExp
-   * @param cb callback function
-   * @returns matched information object, otherwise `false`
+   * @param translate result translate function
+   * @returns matched information object (or translated result), otherwise `null`
    */
-  search(m: string | RegExp, cb?: (obj: { skipped: string; matched: string[] }) => void) {
+  search(m: string | RegExp): { skipped: string; matched: string[] } | null;
+  search<T>(m: string | RegExp, translate: (obj: { skipped: string; matched: string[] }) => T): T | null;
+  search<T>(m: string | RegExp, translate?: (obj: { skipped: string; matched: string[] }) => T) {
     return this.#search(m, (n) => {
       const skipped = this.read(n);
       const matched = this.match(m);
-      if (!matched) return false; // just in case
-      cb?.({ skipped, matched });
-      return { skipped, matched };
+      if (!matched) return null; // just in case
+      const info = { skipped, matched };
+      return translate ? translate(info) : info;
     });
   }
 
@@ -128,7 +131,7 @@ export class StringReader {
    * This function advances the position at the beginning of the matched string if found
    *
    * @param m string or RegExp
-   * @returns read string, `false` on not found
+   * @returns read string, `null` on not found
    */
   readUntil(m: string | RegExp) {
     return this.#search(m, (n) => this.read(n));
